@@ -3,14 +3,13 @@ This is the code for fast spherical mapping of cortical surfaces using [S3Map al
 
 ## Usage
 1. Download or clone this repository into a local folder
-2. open a terminal and run the follwing:
+2. open a terminal and run the follwing (better do this in a conda environment):
 ```
 pip install  pyvista  tensorboard torch torchvision torchaudio
-pip install --prefix=/proj/ganglilab/users/Fenqiang/sunetpkg git+https://github.com/Deep-MI/LaPy.git#egg=lapy
 ```
 if only cpu is available, you can install the cpu version torch
 ```
-pip install --prefix=/proj/ganglilab/users/Fenqiang/sunetpkg torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cpu
+pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cpu
 ```
 3. Prepare your data, i.e., inner surfaces in vtk format (the file name should end in '.vtk')
 4. Simply run "python S3Map_test.py -h" for the spherical mapping, and the expected output should be:
@@ -36,3 +35,4 @@ optional arguments:
                         None)
   --device {GPU,CPU}    The device for running the model. (default: GPU)
 ```
+5. Use paraview to visualize all generated .vtk surfaces, or [read_vtk](https://github.com/zhaofenqiang/S3Map/blob/a96c103f66db443ba52cdafee28af798a527fc54/sphericalunet/utils/vtk.py#L26) into python environment for further processing.
