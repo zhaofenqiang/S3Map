@@ -1,0 +1,17 @@
+---
+levels: 
+  - 6
+  - 7           
+  - 8   # with 10242, 40962, 163842 vertices at repective levels
+smoothness:
+  - 5        
+  - 5
+  - 5
+diffe: True
+bi: True
+learning_rate: 0.005
+weight_smooth:
+  - 30.0
+weight_l2:
+  - 0.5
+num_composition: 6

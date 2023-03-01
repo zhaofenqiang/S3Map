@@ -16,10 +16,10 @@ import os
 import shutil
 
 from sphericalunet.model import SUnet
-from sphericalunet.utils.interp_torch import convert2DTo3D, getEn, diffeomorp, get_bi_inter
+from sphericalunet.utils.interp_torch import convert2DTo3D, getEn, diffeomorp_torch, get_bi_inter
 from sphericalunet.utils.utils import get_neighs_order
 from sphericalunet.utils.vtk import read_vtk, write_vtk
-from sphericalunet.spherical_mapping import inflateSurface, projectionOntoSphe, ResampledInnerSurfVtk, computeMetrics, \
+from sphericalunet.utils.spherical_mapping import inflateSurface, projectionOntoSphe, ResampledInnerSurfVtk, computeMetrics, \
     computeNegArea, computeAndWriteDistortionOnOrig, computeAndWriteDistortionOnRespSphe, computeAndSaveDistortionFile
    
 abspath = os.path.abspath(os.path.dirname(__file__))
@@ -29,19 +29,34 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='S3Map algorithm for mapping a cortical surface to sphere',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     
-    parser.add_argument('--file', '-f', default='None', help="the full path of the inner surface in vtk format, containing vertices and faces")
-    parser.add_argument('--folder', '-folder', default='None', help="a folder for storing the output results")
-    parser.add_argument('--n_vertex', default='None', help="n_vertex")
+    parser.add_argument('--file', '-f', default='None', required=True, help="the full path of the inner surface in vtk format, containing vertices and faces")
+    parser.add_argument('--folder', '-folder', default='None', help="a subject-specific folder for storing the output results")
+    parser.add_argument('--config', '-c', default=None,  required=True,
+                        help="Specify the config file for spherical mapping. An example can be found in the same folder named as S3Map_Config_3level.yaml")
     parser.add_argument('--model_path', default='None', help="full path for finding all trained models")
+    parser.add_argument('--device', default='GPU', choices=['GPU', 'CPU'], 
+                        help='The device for running the model.')
+
 
     args = parser.parse_args()
     file = args.file
     folder = args.folder
     n_vertex = int(args.n_vertex)
     model_path = args.model_path
-    
+    device = args.device
+    model_path = args.model_path
+        
     print('file: ', file)
     print('folder: ', folder)
+    
+    # check device
+    if device == 'GPU':
+        device = torch.device('cuda:0')
+    elif device =='CPU':
+        device = torch.device('cpu')
+    else:
+        raise NotImplementedError('Only support GPU or CPU device')
+        
     
     if not os.path.isfile(os.path.join(folder, file.split('/')[-1])):
         shutil.copyfile(file, os.path.join(folder, file.split('/')[-1]))
@@ -57,10 +72,6 @@ if __name__ == "__main__":
     # initial spherical mapping    
     projectionOntoSphe(file.replace('.vtk', '.inflated.vtk'))
 
-    if torch.cuda.is_available():
-        device = torch.device('cuda:0')
-    else:
-        device = torch.device('cpu')
     
     n_vertexs = [10242, 40962, 163842]
     
