@@ -4,7 +4,7 @@ This is the code for fast spherical mapping of cortical surfaces using [S3Map al
 
 # Usage
 1. Download or clone this repository into a local folder
-2. open a terminal and run the follwing (better do this in a conda environment):
+2. Open a terminal and run the follwing (better do this in a conda environment):
 ```
 pip install  pyvista  tensorboard torch torchvision torchaudio
 ```
