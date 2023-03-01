@@ -2,7 +2,6 @@
 This is the code for fast spherical mapping of cortical surfaces using [S3Map algorithm](https://link.springer.com/chapter/10.1007/978-3-031-16446-0_16).
 
 # Usage
-## Test
 1. Download or clone this repository into a local folder
 2. open a terminal and run the follwing (better do this in a conda environment):
 ```
@@ -37,7 +36,8 @@ optional arguments:
   --device {GPU,CPU}    The device for running the model. (default: GPU)
 ```
 5. Use paraview to visualize all generated .vtk surfaces, or [read_vtk](https://github.com/zhaofenqiang/S3Map/blob/a96c103f66db443ba52cdafee28af798a527fc54/sphericalunet/utils/vtk.py#L26) into python environment for further processing.
-## Train
+
+## Re-train the model on a new dataset
 After data prepration, modify the train.py file to match the training data in your own path. Then, run:
 ```
 python S3Map_train.py
