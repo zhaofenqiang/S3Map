@@ -1,5 +1,6 @@
 # S3Map
 This is the code for fast spherical mapping of cortical surfaces using [S3Map algorithm](https://link.springer.com/chapter/10.1007/978-3-031-16446-0_16).
+![Figure framework](https://github.com/zhaofenqiang/S3Map/blob/main/examples/fig_framework.png)
 
 # Usage
 1. Download or clone this repository into a local folder
