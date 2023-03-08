@@ -15,8 +15,9 @@ pip install torch torchvision torchaudio --extra-index-url https://download.pyto
 3. Prepare your data, i.e., inner surfaces in vtk format (the file name should end in '.vtk')
 4. Simply run "python S3Map_test.py -h" for the spherical mapping, and the expected output should be:
 ```
-usage: S3Map_test.py [-h] --file FILE [--folder FOLDER] --config CONFIG
-                     [--model_path MODEL_PATH] [--device {GPU,CPU}]
+usage: S3Map_test.py [-h] --file FILE --hemi HEMI --folder FOLDER
+                     [--config CONFIG] [--model_path MODEL_PATH]
+                     [--device {GPU,CPU}]
 
 S3Map algorithm for mapping a cortical surface to sphere
 
@@ -24,14 +25,19 @@ optional arguments:
   -h, --help            show this help message and exit
   --file FILE, -f FILE  the full path of the inner surface in vtk format,
                         containing vertices and faces (default: None)
+  --hemi HEMI, -hemi HEMI
+                        the hemisphere of the input inner cortical surface
+                        (default: None)
   --folder FOLDER, -folder FOLDER
                         a subject-specific folder for storing the output
                         results (default: None)
   --config CONFIG, -c CONFIG
                         Specify the config file for spherical mapping. An
                         example can be found in the same folder named as
-                        S3Map_Config_3level.yaml (default: None)
-  --model_path MODEL_PATH
+                        S3Map_Config_3level.yamlIf not given, default is 3
+                        level with 10,242, 40,962, 163,842 vertices,
+                        respectively. (default: None)
+  --model_path MODEL_PATH, -model_path MODEL_PATH
                         full path for finding all trained models (default:
                         None)
   --device {GPU,CPU}    The device for running the model. (default: GPU)
