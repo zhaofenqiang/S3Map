@@ -208,7 +208,7 @@ class SUnet(nn.Module):
     """Define the Spherical UNet structure
 
     """    
-    def __init__(self, in_ch, out_ch, level=7, n_res=5, rotated=0):
+    def __init__(self, in_ch, out_ch, level=7, n_res=5, rotated=0, complex_chs=16):
         """ Initialize the Spherical UNet.
 
         Parameters:
@@ -222,7 +222,7 @@ class SUnet(nn.Module):
         """
         super(SUnet, self).__init__()
         
-        assert (level-n_res) >=1, "number of resolution levels in unet should be at least 1 smaller than iput level"
+        assert (level-n_res) >=1, "number of resolution levels in unet should be at least 1 smaller than input level"
         assert n_res >=2, "number of resolution levels should be larger than 2"     
         assert rotated in [0, 1, 2], "rotated should be in [0, 1, 2]"
         
@@ -235,8 +235,7 @@ class SUnet(nn.Module):
         
         chs = [in_ch]
         for i in range(n_res):
-            chs.append(2**i*8)
-        
+            chs.append(2**i*complex_chs)
         conv_layer = onering_conv_layer
         
         self.down = nn.ModuleList([])
@@ -256,6 +255,7 @@ class SUnet(nn.Module):
         self.n_res = n_res
         
     def forward(self, x):
+        # x's size should be [N (number of vertices) x C (channel)]
         xs = [x]
         for i in range(self.n_res):
             xs.append(self.down[i](xs[i]))
@@ -264,9 +264,10 @@ class SUnet(nn.Module):
         for i in range(self.n_res-1):
             x = self.up[i](x, xs[self.n_res-1-i])
 
-        x = self.outc(x) # N * 2
+        x = self.outc(x)
         return x
         
+    
 
 class GenAgeNet(nn.Module):
     """Generation model for atlas construction

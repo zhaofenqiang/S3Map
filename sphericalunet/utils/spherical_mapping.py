@@ -3,11 +3,14 @@
 """
 Created on Sat Sep  4 01:44:25 2021
 
+2023.3.3 add J_d optimization method and sulc computation code
+
 @author: Fenqiang Zhao
 """
 
 import torch
 import os
+from numba import jit
 import numpy as np
 
 from functools import reduce
@@ -36,15 +39,114 @@ neigh_sorted_orders_163842 = np.concatenate((np.arange(163842)[:, np.newaxis], n
 template_163842 = read_vtk(abspath + '/neigh_indices/sphere_163842_rotated_0.vtk')
 
 
-
-def inflateSurface(vertices, faces, iter_num=20, lamda=0.8, vertex_has_faces=None):
+def InflateSurface(vertices, faces, iter_num=20, lamda=0.9, neigh_orders=None, save_sulc=True, scale=True, inflation_a=1.001):
     """
+    faces shape is Nx3
+    
+    using the eq. 8 in Sec. 3 Surface inflation in fischl et al. cortical surface-based analysiss II 
+    
+    """
+    if scale:
+        vertices = vertices - vertices.mean(0)
+        s = 200 / (vertices[:,1].max() - vertices[:,1].min())
+        vertices = vertices * s
+    
+    num_vertices = len(vertices)
+    
+    # compute and store vertex-vertex connectivity
+    if neigh_orders == None:
+        neigh_orders = get_neighs_order(vertices.shape[0], faces)
+    n_vertex_per_vertex = np.zeros((num_vertices,), dtype=np.int32)
+    for i in range(num_vertices):
+        n_vertex_per_vertex[i] = len(neigh_orders[i])
+    neigh_orders_array = np.zeros((num_vertices, np.max(n_vertex_per_vertex)), dtype=np.int32) + num_vertices
+    for i in range(num_vertices):
+        neigh_orders_array[i, 0:n_vertex_per_vertex[i]] = np.array(list(neigh_orders[i]))
+        
+    # compute and store vertex-face connectivity
+    vertex_has_faces = []
+    for j in range(num_vertices):
+        vertex_has_faces.append([])
+    for j in range(len(faces)):
+        face = faces[j]
+        vertex_has_faces[face[0]].append(j)
+        vertex_has_faces[face[1]].append(j)
+        vertex_has_faces[face[2]].append(j)
+    n_faces_per_vertex = np.zeros((num_vertices,), dtype=np.int32)
+    for i in range(num_vertices):
+        n_faces_per_vertex[i] = len(vertex_has_faces[i])
+    vertex_face_neighs = np.zeros((num_vertices, np.max(n_faces_per_vertex)), dtype=np.int32) + len(faces)
+    for i in range(num_vertices):
+        vertex_face_neighs[i, 0:n_faces_per_vertex[i]] = np.array(vertex_has_faces[i])
+
+    
+    return InflateSurface_worker(vertices, faces, iter_num=iter_num, lamda=lamda, 
+                                 save_sulc=save_sulc, inflation_a=inflation_a, 
+                                 n_faces_per_vertex=n_faces_per_vertex, 
+                                 vertex_face_neighs=vertex_face_neighs,
+                                 neigh_orders_array=neigh_orders_array, 
+                                 n_vertex_per_vertex=n_vertex_per_vertex)
+    
+    
+
+# @jit(nopython=True)
+def InflateSurface_worker(vertices, faces, iter_num=20, lamda=0.9, save_sulc=True,
+                          inflation_a=1.001, n_faces_per_vertex=None, vertex_face_neighs=None,
+                          neigh_orders_array=None, n_vertex_per_vertex=None):
+    """
+    faces shape is Nx3
+    
+    using the eq. 8 in Sec. 3 Surface inflation in fischl et al. cortical surface-based analysiss II 
+    
+    """
+    normal_force = 0.0
+    
+    v_t = vertices
+    if save_sulc:
+        sulc = np.zeros((vertices.shape[0],), dtype=np.float64)
+    for i in range(iter_num):
+        # if i>200:
+        #     # v_t_i = v_t * inflation_a
+        #     # v_t_normal = computeVertexWiseNormal(v_t, faces, n_faces_per_vertex=n_faces_per_vertex, vertex_face_neighs=vertex_face_neighs)
+        #     v_t_append = np.concatenate((v_t, np.array([[0,0,0]])), axis=0)
+        #     v_t_tmp = v_t_append[neigh_orders_array].sum(1) / n_vertex_per_vertex[:, np.newaxis]
+        #     v_t_next = (v_t_tmp - v_t) * lamda + v_t
+        #     # v_t_next = (1 - lamda) * v_t + lamda * v_t_tmp
+        #     if save_sulc:
+        #         # project to normal vector instead of directly calculating distance
+        #         sulc_tmp = np.linalg.norm((v_t_next - v_t), axis=1)
+        #         sulc_tmp = sulc_tmp * np.sign(sulc)   # check sign
+        #         sulc += sulc_tmp
+        # else:
+            
+        v_t_normal = computeVertexWiseNormal(v_t, faces, n_faces_per_vertex=n_faces_per_vertex, vertex_face_neighs=vertex_face_neighs)
+        v_t_append = np.concatenate((v_t, np.array([[0,0,0]])), axis=0)
+        v_t_tmp = v_t_append[neigh_orders_array].sum(1) / n_vertex_per_vertex[:, np.newaxis]
+        v_t_next = (v_t_tmp - v_t) * lamda + normal_force * v_t_normal + v_t
+        if save_sulc:
+            # project to normal vector instead of directly calculating distance
+            tmp = v_t_next - v_t
+            sulc_tmp = (tmp * v_t_normal).sum(1)
+            sulc += sulc_tmp
+            
+        v_t = v_t_next
+        if i % 50 == 0:
+            print(i, "/", iter_num)
+        
+    if save_sulc:
+        return v_t, sulc
+    else:
+        return v_t
+
+
+
+def SmoothSurface(vertices, faces, iter_num=20, lamda=0.8, vertex_has_faces=None, save_sulc=True):
+    """
+    faces shape is Nx3
     
     using the formula in 2.1 in "a quantitative comparison of three methods for inflating cortical meshes"
     V_t = (1-lamda) * V + lamda * V_N_i
     
-    faces shape is Nx3
-
     """
     num_vertices = len(vertices)
     
@@ -57,34 +159,105 @@ def inflateSurface(vertices, faces, iter_num=20, lamda=0.8, vertex_has_faces=Non
             vertex_has_faces[face[0]].append(j)
             vertex_has_faces[face[1]].append(j)
             vertex_has_faces[face[2]].append(j)
-    max_len = 0
+    n_faces_per_vertex = []
     for i in range(num_vertices):
-        if len(vertex_has_faces[i]) > max_len:
-            max_len = len(vertex_has_faces[i]) 
-    print("max_len: ", max_len)
+        n_faces_per_vertex.append(len(vertex_has_faces[i]))
+    n_faces_per_vertex = np.array(n_faces_per_vertex)
+    print("max neighs: ", np.max(n_faces_per_vertex))
     
-    neighs = np.zeros((num_vertices, max_len), dtype=np.int32) + len(faces)
+    vertex_face_neighs = np.zeros((num_vertices, np.max(n_faces_per_vertex)), dtype=np.int32) + len(faces)
     for i in range(num_vertices):
-        neighs[i, 0:len(vertex_has_faces[i])] = np.array(vertex_has_faces[i])
+        vertex_face_neighs[i, 0:len(vertex_has_faces[i])] = np.array(vertex_has_faces[i])
     
     v_t = vertices
+    if save_sulc:
+        sulc = np.zeros((vertices.shape[0],), dtype=np.float64)
     for i in range(iter_num):
+        v_t_normal = computeVertexWiseNormal(v_t, faces, n_faces_per_vertex=n_faces_per_vertex, 
+                                             vertex_face_neighs=vertex_face_neighs)
         face_center = v_t[faces].mean(1)
         face_area = computeFaceWiseArea(v_t, faces)
         face_cen_weighted = face_area[:, np.newaxis].repeat(3,1) * face_center
         face_area = np.append(face_area, 0)
         face_cen_weighted = np.concatenate((face_cen_weighted, np.array([[0,0,0]])), axis=0)
-        face_center = face_cen_weighted[neighs].sum(1) / face_area[neighs].sum(1, keepdims=True)
+        face_center = face_cen_weighted[vertex_face_neighs].sum(1) / face_area[vertex_face_neighs].sum(1, keepdims=True)
         
-        v_t = (1 - lamda) * v_t + lamda * face_center
-            
-    return v_t
+        v_t_next = (1 - lamda) * v_t + lamda * face_center
+        if save_sulc:
+            sulc_tmp = np.linalg.norm((v_t_next - v_t), axis=1)
+            sulc_tmp = sulc_tmp * np.sign(np.sum((v_t_next - v_t) * v_t_normal, axis=1))   # check sign
+            sulc += sulc_tmp
+        v_t = v_t_next
+        
+    if save_sulc:
+        return v_t, sulc
+    else:
+        return v_t
 
 
-
-def projectionOntoSphe(file, compute_distortion=False):
+# @jit(nopython=True)
+def computeVertexWiseNormal(vertices, faces, normalize=True, n_faces_per_vertex=None, vertex_face_neighs=None):
     """
-    Surface inflation and projection for spherical mapping of cortical surfaces
+
+    Parameters
+    ----------
+    vertices : TYPE
+        DESCRIPTION.
+    faces : shape Nx3
+    vertex_has_faces : TYPE, optional
+        DESCRIPTION. The default is None.
+    n_faces_per_vertex : TYPE, optional
+        DESCRIPTION. The default is None.
+    vertex_face_neighs : TYPE, optional
+        DESCRIPTION. The default is None.
+
+    Returns
+    -------
+    area : TYPE
+        DESCRIPTION.
+
+    """
+    num_vertices = vertices.shape[0]
+    
+    v1 = vertices[faces[:,0], :]
+    v2 = vertices[faces[:,1], :]
+    v3 = vertices[faces[:,2], :]
+    facewise_normal = np.cross(v2-v1, v3-v1)
+    tmp = np.sqrt(np.sum(facewise_normal*facewise_normal,axis=1))
+    facewise_normal = facewise_normal/tmp.reshape((-1,1))
+    facewise_normal = np.concatenate((facewise_normal, np.array([[0,0,0]])), axis=0)
+    
+    if vertex_face_neighs is None:
+        assert n_faces_per_vertex is not None, "error"
+        vertex_has_faces = []
+        for j in range(num_vertices):
+            vertex_has_faces.append([])
+        for j in range(len(faces)):
+            face = faces[j]
+            vertex_has_faces[face[0]].append(j)
+            vertex_has_faces[face[1]].append(j)
+            vertex_has_faces[face[2]].append(j)
+        n_faces_per_vertex = []
+        for i in range(num_vertices):
+            n_faces_per_vertex.append(len(vertex_has_faces[i]))
+        n_faces_per_vertex = np.array(n_faces_per_vertex)
+        
+        vertex_face_neighs = np.zeros((num_vertices, np.max(n_faces_per_vertex)), dtype=np.int32) + len(faces)
+        for i in range(num_vertices):
+            vertex_face_neighs[i, 0:n_faces_per_vertex[i]] = np.array(vertex_has_faces[i])
+    
+    vertexwise_normal = np.sum(facewise_normal[vertex_face_neighs], axis=1)
+    vertexwise_normal = vertexwise_normal/np.reshape(n_faces_per_vertex, (-1,1))
+    if normalize:
+        vertexwise_normal = vertexwise_normal/np.reshape(np.sqrt(np.sum(vertexwise_normal*vertexwise_normal,axis=1)), (-1,1))
+           
+    return vertexwise_normal         
+
+
+
+def projectOntoSphere(file, compute_distortion=False):
+    """
+    Surface projection for spherical mapping of cortical surfaces
     Here is the projection and resampling code
 
     Parameters
@@ -97,31 +270,40 @@ def projectionOntoSphe(file, compute_distortion=False):
 
     """
     print("Starting projection onto sphere...")
-    print(file)
     
     inflated_surf = read_vtk(file)
     if compute_distortion:
-        inner_surf = read_vtk(file.replace('.inflated.vtk', '.vtk'))
+        inner_surf = read_vtk(file.replace('.Inflated.vtk', '.vtk'))
         assert len(inflated_surf['vertices']) == len(inner_surf['vertices'])
         assert (inner_surf['faces'] == inflated_surf['faces']).sum() == len(inflated_surf['faces']) *4
     
     inflated_ver = inflated_surf['vertices']
-    
     inflated_ver = inflated_ver - inflated_ver.mean(0)     #centralize
     inflated_ver = 100 * inflated_ver / np.linalg.norm(inflated_ver, axis=1).mean()  #normalize to 100 cortical shape
     sphere_0_ver = 100 * inflated_ver / np.linalg.norm(inflated_ver, axis=1)[:, np.newaxis].repeat(3, axis=1)
     
     if compute_distortion:
         computeAndWriteDistortionOnOrigSphe(sphere_0_ver, inner_surf, file.replace('.inflated.vtk', '.SIP.vtk'))
-        print('projection onto sphere done') 
-        computeAndWriteDistortionOnRespSphe(sphere_0_ver, template_163842, inner_surf,
-                                            file.replace('.inflated.vtk', '.SIP.RespInner.vtk'))
-        print('projection onto sphere resampling done')
+        print('Project onto sphere done') 
     else:
         inflated_surf['vertices'] = sphere_0_ver
-        write_vtk(inflated_surf, file.replace('.inflated.vtk', '.SIP.vtk'))
-        print('projection onto sphere done') 
-
+        write_vtk(inflated_surf, file.replace('.Inflated.vtk', '.SIP.vtk'))
+        print('Project onto sphere done') 
+    
+    neg_area = computeNegArea(inflated_surf['vertices'], inflated_surf['faces'][:, 1:])
+    if neg_area > 10000:
+        print("Negative areas of initial mapping: ", neg_area, ". Too many negative areas, need to increase the inflation iteration number.")
+        # raise NotImplementedError('Too many negative areas.')
+    else:
+        print("Negative areas of initial mapping: ", neg_area)
+        inner_surf = read_vtk(file.replace('.Inflated.vtk', '.vtk'))
+        inner_surf['sulc'] = inflated_surf['sulc']
+        computeAndWriteDistortionOnRespSphe(sphere_0_ver, template_163842, inner_surf,
+                                            file.replace('.Inflated.vtk', '.SIP.RespInner.vtk'),
+                                            compute_distortion=compute_distortion)
+        print('Project onto sphere resampling done')
+            
+        
     
 
 def computeAndWriteDistortionOnOrig(template, orig_surf, moved_surf, inner_surf, neigh_orders, out_name):
@@ -152,41 +334,42 @@ def computeAndWriteDistortionOnOrigSphe(orig_sphere_moved, inner_surf, file_name
 def computeAndWriteDistortionOnRespSphe(orig_sphere_moved, template, inner_surf, file_name, compute_distortion=False):
     resampled_feat = resampleSphereSurf(orig_sphere_moved, template['vertices'], 
                                         np.concatenate((inner_surf['vertices'], 
-                                                        inner_surf['sulc'][:, np.newaxis],
-                                                        inner_surf['curv'][:, np.newaxis]), axis=1),
+                                                        inner_surf['sulc'][:, np.newaxis]), axis=1),
                                         faces=inner_surf['faces'], threshold=1e-8, ring_threshold=4)
     if compute_distortion:
         dist_dis, area_dis = computeDistortionOnRegularMesh(resampled_feat[:, 0:3], template['vertices'], neigh_sorted_orders_163842)
-    
-    resampled_inner_surf = {'vertices': resampled_feat[:, 0:3],
+        resampled_inner_surf = {'vertices': resampled_feat[:, 0:3],
+                                'faces': template['faces'],
+                                'sulc': resampled_feat[:,-1],
+                                'dist_dis': dist_dis,
+                                'area_dis': area_dis
+                                }
+    else:
+        resampled_inner_surf = {'vertices': resampled_feat[:, 0:3],
                             'faces': template['faces'],
-                            'sulc': resampled_feat[:,-2],
-                            'curv': resampled_feat[:,-1],
-                            'dist_dis': dist_dis,
-                            'area_dis': area_dis
+                            'sulc': resampled_feat[:,-1]
                             }
     write_vtk(resampled_inner_surf, file_name)
+    print("Resampling inner surfce done. Writing it into ", file_name)
     
     # in case that resampled sphere already exists
-    if os.path.exists(file_name.replace('RespInner.vtk', 'RespSphe.vtk')):
-        resampled_sphere_surf = read_vtk(file_name.replace('RespInner.vtk', 'RespSphe.vtk'))
-    else:
-        resampled_sphere_surf = {'vertices': template['vertices'],
+    # if os.path.exists(file_name.replace('RespInner.vtk', 'RespSphe.vtk')):
+    #     resampled_sphere_surf = read_vtk(file_name.replace('RespInner.vtk', 'RespSphe.vtk'))
+    # else:
+    resampled_sphere_surf = {'vertices': template['vertices'],
                                  'faces': template['faces']
                                 }
-    resampled_sphere_surf['sulc'] = resampled_feat[:,-2]
-    resampled_sphere_surf['curv'] = resampled_feat[:,-1]
-    resampled_sphere_surf['dist_dis'] = area_dis
-    resampled_sphere_surf['area_dis'] = area_dis
+    resampled_sphere_surf['sulc'] = resampled_feat[:,-1]
+    # resampled_sphere_surf['curv'] = resampled_feat[:,-1]
+    # resampled_sphere_surf['dist_dis'] = area_dis
+    # resampled_sphere_surf['area_dis'] = area_dis
     
     write_vtk(resampled_sphere_surf, file_name.replace('RespInner.vtk', 'RespSphe.vtk'))
-    
+    print("Resampling spherical surfce done. Writing it into ", file_name.replace('RespInner.vtk', 'RespSphe.vtk'))
         
 
 def computeAndSaveDistortionFile(file1, file2):
     """
-    
-
     file1 is the original surface
 
     """
@@ -681,5 +864,6 @@ def computeDistortionOnOrigMesh(inflated_ver, sphere_ver, faces):
     dist_dis = (sphere_dis_vert - inflated_dis_vert) / inflated_dis_vert
 
     return angle_dis, dist_dis, area_dis
+
 
 

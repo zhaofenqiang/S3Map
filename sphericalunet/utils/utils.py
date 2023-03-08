@@ -92,16 +92,29 @@ def Get_neighs_order(rotated=0):
     return neigh_orders_163842, neigh_orders_40962, neigh_orders_10242,\
         neigh_orders_2562, neigh_orders_642, neigh_orders_162, neigh_orders_42, neigh_orders_12
   
-def get_neighs_order(n_vertex, rotated=0):
-    adj_mat_order = sio.loadmat(abspath +'/neigh_indices/adj_mat_order_'+ \
-                                str(n_vertex) +'_rotated_' + str(rotated) + '.mat')
-    adj_mat_order = adj_mat_order['adj_mat_order']
-    neigh_orders = np.zeros((len(adj_mat_order), 7))
-    neigh_orders[:,0:6] = adj_mat_order-1
-    neigh_orders[:,6] = np.arange(len(adj_mat_order))
-    neigh_orders = np.ravel(neigh_orders).astype(np.int64)
-    
+def get_neighs_order(n_vertex, faces=None, rotated=0):
+    if n_vertex in [12,42,162,642,2562,10242,40962,163842]:
+        neigh_orders = np.load(abspath +'/neigh_indices/adj_mat_order_'+ \
+                                    str(n_vertex) +'_rotated_' + str(rotated) + '.npy', allow_pickle=True)
+    else:
+        neigh_unsorted_orders = []
+        for i in range(n_vertex):
+            neigh_unsorted_orders.append(set())
+        for i in range(faces.shape[0]):
+            face = faces[i]
+            neigh_unsorted_orders[face[0]].add(face[1])
+            neigh_unsorted_orders[face[0]].add(face[2])
+            neigh_unsorted_orders[face[1]].add(face[0])
+            neigh_unsorted_orders[face[1]].add(face[2])
+            neigh_unsorted_orders[face[2]].add(face[0])
+            neigh_unsorted_orders[face[2]].add(face[1])
+        neigh_orders = neigh_unsorted_orders
+        
     return neigh_orders
+
+
+def get_template(n_vertex):
+    return read_vtk(abspath+'/neigh_indices/sphere_'+ str(n_vertex) +'_rotated_0.vtk')
 
 
 
