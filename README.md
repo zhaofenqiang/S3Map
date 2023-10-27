@@ -1,4 +1,4 @@
-Note this is a preliminary version! There may exist some problems. We will update it in future.
+Note this is a preliminary version! There may exist some problems. We will update it in the future. It is only for research use!
 
 # S3Map
 This is the code for fast spherical mapping of cortical surfaces using [S3Map algorithm](https://link.springer.com/chapter/10.1007/978-3-031-16446-0_16).
